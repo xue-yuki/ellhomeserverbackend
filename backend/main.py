@@ -7,61 +7,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
-import sqlite3
-import asyncio
-from datetime import datetime, timedelta
-import contextlib
 
 load_dotenv()
 
-# --- Database Initialization ---
-DB_FILE = "history.db"
-
-def init_db():
-    with sqlite3.connect(DB_FILE) as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS resource_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                cpu_percent REAL,
-                ram_percent REAL,
-                disk_percent REAL
-            )
-        ''')
-        conn.commit()
-
-init_db()
-
-# --- Background Task ---
-async def log_stats_task():
-    while True:
-        try:
-            cpu = psutil.cpu_percent(interval=None)
-            ram = psutil.virtual_memory().percent
-            disk = psutil.disk_usage('/').percent
-            
-            with contextlib.closing(sqlite3.connect(DB_FILE)) as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "INSERT INTO resource_history (cpu_percent, ram_percent, disk_percent) VALUES (?, ?, ?)",
-                    (cpu, ram, disk)
-                )
-                conn.commit()
-        except Exception as e:
-            print(f"Error logging stats: {e}")
-            
-        await asyncio.sleep(60)
-
-@contextlib.asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup
-    task = asyncio.create_task(log_stats_task())
-    yield
-    # Shutdown
-    task.cancel()
-
-app = FastAPI(title="Jiyu Home Server Dashboard API", lifespan=lifespan)
+app = FastAPI(title="Jiyu Home Server Dashboard API")
 
 origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
 
@@ -140,35 +89,7 @@ def get_stats():
         "os": f"{platform.system()} {platform.release()}"
     }
 
-@app.get("/history")
-def get_history():
-    # Fetch last 24 hours of data, or up to 1440 points (assuming 1/min)
-    # Since we want a readable chart, maybe we return data aggregated or just the last N points.
-    # We will return the last 60 points for the last hour to prevent overwhelming the chart,
-    # or return all and let frontend handle it. Let's return the last 60 points.
-    with contextlib.closing(sqlite3.connect(DB_FILE)) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT timestamp, cpu_percent as cpu, ram_percent as ram 
-            FROM resource_history 
-            ORDER BY timestamp DESC 
-            LIMIT 60
-        ''')
-        rows = cursor.fetchall()
-    
-    # Reverse so it's chronological
-    data = [dict(row) for row in reversed(rows)]
-    
-    # Format timestamp to HH:MM
-    for row in data:
-        try:
-            dt = datetime.strptime(row['timestamp'], '%Y-%m-%d %H:%M:%S')
-            row['time'] = dt.strftime('%H:%M')
-        except:
-            row['time'] = row['timestamp']
-            
-    return data
+
 
 @app.get("/processes")
 def get_processes():
