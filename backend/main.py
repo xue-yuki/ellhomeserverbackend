@@ -3,7 +3,7 @@ import psutil
 import platform
 import time
 import subprocess
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -90,6 +90,78 @@ def get_stats():
     }
 
 
+
+import json
+import asyncio
+
+@app.websocket("/ws/terminal")
+async def websocket_terminal(websocket: WebSocket, token: str = None):
+    expected_token = os.getenv("TERMINAL_PASSWORD")
+    
+    await websocket.accept()
+    if not expected_token:
+        await websocket.send_bytes(b"TERMINAL_PASSWORD is not set in backend .env\r\n")
+        await websocket.close(code=1008)
+        return
+        
+    if token != expected_token:
+        await websocket.send_bytes(b"Authentication failed. Incorrect password.\r\n")
+        await websocket.close(code=1008)
+        return
+
+    if platform.system() != "Linux":
+        await websocket.send_bytes(b"Terminal is only supported on Linux.\r\n")
+        await websocket.close(code=1000)
+        return
+
+    import pty
+    import os
+    import fcntl
+    import struct
+    import termios
+
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.environ["TERM"] = "xterm-256color"
+        os.execv("/bin/bash", ["bash"])
+        
+    loop = asyncio.get_running_loop()
+    
+    def pty_reader():
+        try:
+            data = os.read(fd, 4096)
+            if data:
+                asyncio.create_task(websocket.send_bytes(data))
+            else:
+                loop.remove_reader(fd)
+        except Exception:
+            loop.remove_reader(fd)
+
+    loop.add_reader(fd, pty_reader)
+    
+    try:
+        while True:
+            msg = await websocket.receive_text()
+            try:
+                data = json.loads(msg)
+                if data.get("type") == "resize":
+                    winsz = struct.pack("HHHH", data["rows"], data["cols"], 0, 0)
+                    fcntl.ioctl(fd, termios.TIOCSWINSZ, winsz)
+                elif data.get("type") == "data":
+                    os.write(fd, data["data"].encode("utf-8"))
+            except json.JSONDecodeError:
+                pass
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        print("Terminal Error:", e)
+    finally:
+        loop.remove_reader(fd)
+        try:
+            os.kill(pid, 9)
+            os.close(fd)
+        except Exception:
+            pass
 
 @app.get("/processes")
 def get_processes():
