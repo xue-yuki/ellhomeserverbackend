@@ -12,12 +12,12 @@ load_dotenv()
 
 app = FastAPI(title="Jiyu Home Server Dashboard API")
 
-origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=origins,
+    allow_credentials=False,  # Must be False when allow_origins=["*"]
     allow_methods=["*"],
     allow_headers=["*"],
 )
