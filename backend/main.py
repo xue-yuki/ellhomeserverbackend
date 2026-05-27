@@ -41,7 +41,7 @@ async def log_stats_task():
             ram = psutil.virtual_memory().percent
             disk = psutil.disk_usage('/').percent
             
-            with sqlite3.connect(DB_FILE) as conn:
+            with contextlib.closing(sqlite3.connect(DB_FILE)) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "INSERT INTO resource_history (cpu_percent, ram_percent, disk_percent) VALUES (?, ?, ?)",
@@ -146,7 +146,7 @@ def get_history():
     # Since we want a readable chart, maybe we return data aggregated or just the last N points.
     # We will return the last 60 points for the last hour to prevent overwhelming the chart,
     # or return all and let frontend handle it. Let's return the last 60 points.
-    with sqlite3.connect(DB_FILE) as conn:
+    with contextlib.closing(sqlite3.connect(DB_FILE)) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute('''
