@@ -100,17 +100,17 @@ async def websocket_terminal(websocket: WebSocket, token: str = None):
     
     await websocket.accept()
     if not expected_token:
-        await websocket.send_bytes(b"TERMINAL_PASSWORD is not set in backend .env\r\n")
+        await websocket.send_text("TERMINAL_PASSWORD is not set in backend .env\r\n")
         await websocket.close(code=1008)
         return
         
     if token != expected_token:
-        await websocket.send_bytes(b"Authentication failed. Incorrect password.\r\n")
+        await websocket.send_text("Authentication failed. Incorrect password.\r\n")
         await websocket.close(code=1008)
         return
 
     if platform.system() != "Linux":
-        await websocket.send_bytes(b"Terminal is only supported on Linux.\r\n")
+        await websocket.send_text("Terminal is only supported on Linux.\r\n")
         await websocket.close(code=1000)
         return
 
